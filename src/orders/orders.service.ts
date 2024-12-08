@@ -119,31 +119,37 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   }
 
   async findOne(id: string) {
-    const order = await this.order.findUnique({
-      where: { id },
-      include: {
-        OrderItem: { select: { productId: true, quantity: true, price: true } },
-      },
-    });
-
-    const productIds = order.OrderItem.map((item) => item.productId);
-    const products = await this.validateProducts(productIds);
-
-    if (!order) {
-      throw new RpcException({
-        message: `Order with id #${id} not found`,
-        status: 404,
+    try {
+      const order = await this.order.findUnique({
+        where: { id },
+        include: {
+          OrderItem: {
+            select: { productId: true, quantity: true, price: true },
+          },
+        },
       });
-    }
 
-    return {
-      ...order,
-      OrderItem: order.OrderItem.map((item) => ({
-        ...item,
-        productName: products.find((product) => product.id === item.productId)
-          .name,
-      })),
-    };
+      if (!order) {
+        throw new RpcException({
+          message: `Order with id #${id} not found`,
+          status: 404,
+        });
+      }
+
+      const productIds = order.OrderItem.map((item) => item.productId);
+      const products = await this.validateProducts(productIds);
+
+      return {
+        ...order,
+        OrderItem: order.OrderItem.map((item) => ({
+          ...item,
+          productName: products.find((product) => product.id === item.productId)
+            .name,
+        })),
+      };
+    } catch (error) {
+      throw new RpcException(error);
+    }
   }
 
   async changeOrderStatus(changeOrderStatusDto: ChangeOrderStatusDto) {

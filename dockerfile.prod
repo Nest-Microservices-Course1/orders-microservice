@@ -1,0 +1,57 @@
+# ---- Dependencias ----
+# Utiliza una imagen base ligera de Node.js en Alpine
+FROM node:21-alpine3.19 AS deps
+
+# Establece el directorio de trabajo en el contenedor
+WORKDIR /usr/src/app
+
+# Copia los archivos de package.json y package-lock.json para instalar dependencias
+COPY package.json .
+COPY package-lock.json .
+
+# Instala las dependencias
+RUN npm install
+
+# ---- Build - Construcción de la aplicación ----
+FROM node:21-alpine3.19 AS build
+
+ARG ORDERS_DB_URL
+ENV DATABASE_URL=$ORDERS_DB_URL
+
+WORKDIR /usr/src/app
+
+# Copiar de deps los módulos de node
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+
+# Copia el resto de los archivos de la aplicación al contenedor
+COPY . .
+
+# Generar el cliente de prisma
+RUN npx prisma migrate deploy
+RUN npx prisma generate
+
+# Transpila TypeScript a JavaScript
+RUN npm run build
+
+# Limpieza de los módulos innecesarios de node
+RUN npm ci -f --only=production && npm cache clean --force
+
+# ---- Crear la imagen final de Docker ----
+FROM node:21-alpine3.19 AS prod
+
+WORKDIR /usr/src/app
+
+COPY --from=build /usr/src/app/node_modules ./node_modules
+
+# Copiar carpeta DIST
+COPY --from=build /usr/src/app/dist ./dist
+
+ENV NODE_ENV=production
+
+USER node
+
+# Expone el puerto 3000
+EXPOSE 3000
+
+# Define el comando predeterminado que se ejecutará cuando se inicie el contenedor.
+CMD [ "node", "dist/main.js" ]
